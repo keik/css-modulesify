@@ -1,4 +1,5 @@
 // Some css-modules-loader-code dependencies use Promise so we'll provide it for older node versions
+var d = require('debug')('keik:css-modulesify')
 if (!global.Promise) { global.Promise = require('promise-polyfill'); }
 
 var fs = require('fs');
@@ -165,13 +166,16 @@ module.exports = function (browserify, options) {
     var relFilename = path.relative(rootDir, filename);
     tokensByFile[filename] = loader.tokensByFile[filename] = null;
 
+    d('_flush 1 @relFilename', relFilename)
     loader.fetch(relFilename, '/').then(function (tokens) {
       var deps = loader.deps.dependenciesOf(filename);
+      d('fetch cb 0 @deps', deps, `(${relFilename})`)
       var output = deps.map(function (f) {
         return 'require("' + f + '")';
       });
       output.push('module.exports = ' + JSON.stringify(tokens));
 
+      d('fetch cb 1 @output', output)
       var isValid = true;
       var isUndefined = /\bundefined\b/;
       Object.keys(tokens).forEach(function (k) {
@@ -179,6 +183,7 @@ module.exports = function (browserify, options) {
           isValid = false;
         }
       });
+      d('fetch cb 2 @tokens', tokens)
 
       if (!isValid) {
         var err = 'Composition in ' + filename + ' contains an undefined reference';
@@ -189,6 +194,7 @@ module.exports = function (browserify, options) {
       assign(tokensByFile, loader.tokensByFile);
 
       self.push(output.join('\n'));
+      d('fetch cb 3 @output string', output.join('\n'))
       return callback();
     }).catch(function (err) {
       self.push('console.error("' + err + '");');

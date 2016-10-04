@@ -1,5 +1,6 @@
 'use strict';
 
+var d = require('debug')('keik:css-modulesify:file-system-loader')
 var DepGraph = require('dependency-graph').DepGraph;
 var nodeResolve = require('resolve');
 
@@ -118,6 +119,7 @@ var FileSystemLoader = (function () {
       var sources = this.sources;
       var written = {};
 
+      d('get 0 @deps', this.deps.overallOrder())
       return this.deps.overallOrder().map(function (filename) {
         if (written[filename] === true) {
           return null;

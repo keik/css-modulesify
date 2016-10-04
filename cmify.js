@@ -1,3 +1,4 @@
+var d = require('debug')('keik:css-modulesify:cmify')
 var stream = require("stream");
 var path = require("path");
 var util = require("util");
@@ -8,6 +9,7 @@ function Cmify(filename, opts) {
     return new Cmify(filename, opts);
   }
 
+  d('Cmify 0 @filename', filename)
   stream.Transform.call(this);
 
   this.cssExt = /\.css$/;
