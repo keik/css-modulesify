@@ -5,12 +5,18 @@ if (!global.Promise) { global.Promise = require('promise-polyfill'); }
 var fs = require('fs');
 var path = require('path');
 var Cmify = require('./cmify');
-var Core = require('css-modules-loader-core');
 var FileSystemLoader = require('./file-system-loader');
 var assign = require('object-assign');
 var stringHash = require('string-hash');
 var ReadableStream = require('stream').Readable;
 var through = require('through2');
+var postcss = require('postcss')
+var scope = require('postcss-modules-scope')
+var localByDefault = require('postcss-modules-local-by-default')
+var extractImports = require('postcss-modules-extract-imports')
+var values = require('postcss-modules-values')
+var parser = require('postcss-modules-parser')
+var identity = require('lodash').identity
 
 /*
   Custom `generateScopedName` function for `postcss-modules-scope`.
@@ -42,7 +48,6 @@ function generateLongName (name, filename) {
   Get the default plugins and apply options.
 */
 function getDefaultPlugins (options) {
-  var scope = Core.scope;
   var customNameFunc = options.generateScopedName;
   var defaultNameFunc = process.env.NODE_ENV === 'production' ?
       generateShortName :
@@ -51,10 +56,11 @@ function getDefaultPlugins (options) {
   scope.generateScopedName = customNameFunc || defaultNameFunc;
 
   return [
-    Core.values
-    , Core.localByDefault
-    , Core.extractImports
+    values
+    , localByDefault
+    , extractImports
     , scope
+    , parser
   ];
 }
 
