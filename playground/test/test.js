@@ -58,17 +58,17 @@ test('aaa', (t) => {
 `)
 })
 
-// test('aaa', (t) => {
-//   t.is(child_process.execSync('$(npm bin)/browserify ./fixture/composes-from-others/1.js -p [ ../../ -o bundle.css ] | node').toString(),
-// `{ aaa: '_fixture_composes_from_others_1__aaa _fixture_composes_from_others_shared__bbb' }
-// `)
+test('aaa', (t) => {
+  t.is(child_process.execSync('$(npm bin)/browserify ./fixture/composes-from-others/1.js -p [ ../../ -o bundle.css ] | node').toString(),
+`{ aaa: '_fixture_composes_from_others_1__aaa _fixture_composes_from_others_shared__bbb' }
+`)
 
-//   t.is(fs.readFileSync('./bundle.css').toString(),
-// `._fixture_composes_from_others_shared__bbb {
-//   color: yellow;
-// }
-// ._fixture_composes_from_others_1__aaa {
-//   font-size: 10em;
-// }
-// `)
-// })
+  t.is(fs.readFileSync('./bundle.css').toString(),
+`._fixture_composes_from_others_shared__bbb {
+  color: yellow;
+}
+._fixture_composes_from_others_1__aaa {
+  font-size: 10em;
+}
+`)
+})

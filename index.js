@@ -31,7 +31,8 @@ function generateShortName (name, filename, css) {
   Appends a hash of the css source.
 */
 function generateLongName (name, filename) {
-  var sanitisedPath = filename.replace(/\.[^\.\/\\]+$/, '')
+  var relativePath = path.relative(rootDir, filename)
+  var sanitisedPath = relativePath.replace(/\.[^\.\/\\]+$/, '')
       .replace(/[\W_]+/g, '_')
       .replace(/^_|_$/g, '');
   d('@@@@sanitiedPath', sanitisedPath, filename)
@@ -67,12 +68,13 @@ var tokensByEntrypoint = {};
 
 // we need a separate loader for each entry point
 var bundledCss = ''
+var rootDir
 
 module.exports = function (browserify, options) {
   options = options || {};
 
   // if no root directory is specified, assume the cwd
-  var rootDir = options.rootDir || options.d || browserify._options.basedir;
+  rootDir = options.rootDir || options.d || browserify._options.basedir;
   if (rootDir) { rootDir = path.resolve(rootDir); }
   if (!rootDir) { rootDir = process.cwd(); }
 
@@ -104,12 +106,12 @@ module.exports = function (browserify, options) {
 
     postcss(modules({
       generateScopedName: generateLongName,
-      getJSON: (cssFilename, css) => {
-        d('======getJSON========', cssFilename)
-        self.push('module.exports = ' + JSON.stringify(css))
+      getJSON: (cssFilename, json) => {
+        d('======getJSON========', cssFilename, json)
+        self.push('module.exports = ' + JSON.stringify(json))
       },
     }))
-      .process(this._data, {from: '/' + relFilename})
+      .process(this._data, {from: relFilename})
       .then((result) => {
         d('=========result=======');
         d(result.css);
