@@ -5,18 +5,12 @@ if (!global.Promise) { global.Promise = require('promise-polyfill'); }
 var fs = require('fs');
 var path = require('path');
 var Cmify = require('./cmify');
-var FileSystemLoader = require('./file-system-loader');
 var assign = require('object-assign');
 var stringHash = require('string-hash');
 var ReadableStream = require('stream').Readable;
 var through = require('through2');
 var postcss = require('postcss')
-var scope = require('postcss-modules-scope')
-var localByDefault = require('postcss-modules-local-by-default')
-var extractImports = require('postcss-modules-extract-imports')
-var values = require('postcss-modules-values')
-var parser = require('postcss-modules-parser')
-var identity = require('lodash').identity
+var modules = require('postcss-modules')
 
 /*
   Custom `generateScopedName` function for `postcss-modules-scope`.
@@ -40,27 +34,9 @@ function generateLongName (name, filename) {
   var sanitisedPath = filename.replace(/\.[^\.\/\\]+$/, '')
       .replace(/[\W_]+/g, '_')
       .replace(/^_|_$/g, '');
+  d('@@@@sanitiedPath', sanitisedPath, filename)
 
   return '_' + sanitisedPath + '__' + name;
-}
-
-/*
-  Get the default plugins and apply options.
-*/
-function getDefaultPlugins (options) {
-  var customNameFunc = options.generateScopedName;
-  var defaultNameFunc = process.env.NODE_ENV === 'production' ?
-      generateShortName :
-      generateLongName;
-
-  scope.generateScopedName = customNameFunc || defaultNameFunc;
-
-  return [
-    values
-    , localByDefault
-    , extractImports
-    , scope
-  ];
 }
 
 /*
@@ -87,9 +63,10 @@ function normalizeManifestPaths (tokensByFile, rootDir) {
 
 // keep track of all tokens so we can avoid duplicates
 var tokensByFile = {};
+var tokensByEntrypoint = {};
 
 // we need a separate loader for each entry point
-var loadersByFile = {};
+var bundledCss = ''
 
 module.exports = function (browserify, options) {
   options = options || {};
@@ -108,111 +85,47 @@ module.exports = function (browserify, options) {
   var jsonOutFilename = options.json || options.jsonOutput;
   transformOpts.cssOutFilename = cssOutFilename;
 
-  // PostCSS plugins passed to FileSystemLoader
-  var plugins = options.use || options.u;
-  if (!plugins) {
-    plugins = getDefaultPlugins(options);
-  }
-  else {
-    if (typeof plugins === 'string') {
-      plugins = [plugins];
-    }
-  }
-
-  var postcssBefore = options.postcssBefore || options.before || [];
-  var postcssAfter = options.postcssAfter || options.after || [];
-  plugins = (Array.isArray(postcssBefore) ? postcssBefore : [postcssBefore]).concat(plugins).concat(postcssAfter);
-
-  // load plugins by name (if a string is used)
-  plugins = plugins.map(function requirePlugin (name) {
-    // assume not strings are already required plugins
-    if (typeof name !== 'string') {
-      return name;
-    }
-
-    var plugin = module.parent.require(name);
-
-    // custom scoped name generation
-    if (name === 'postcss-modules-scope') {
-      options[name] = options[name] || {};
-      if (!options[name].generateScopedName) {
-        options[name].generateScopedName = generateLongName;
-      }
-    }
-
-    if (name in options) {
-      plugin = plugin(options[name]);
-    }
-    else {
-      plugin = plugin.postcss || plugin();
-    }
-
-    return plugin;
-  });
-
-  // create a loader for this entry file
-  if (!loadersByFile[cssOutFilename]) {
-    loadersByFile[cssOutFilename] = new FileSystemLoader(rootDir, plugins);
-  }
-
   // TODO: clean this up so there's less scope crossing
   Cmify.prototype._flush = function (callback) {
+    d('_flush @_filename', this._filename)
+
     var self = this;
     var filename = this._filename;
 
     // only handle .css files
-    if (!this.isCssFile(filename)) { return callback(); }
-
-    // grab the correct loader
-    var loader = loadersByFile[this._cssOutFilename];
+    if (!this.isCssFile(filename)) {
+      callback()
+      return
+    }
 
     // convert css to js before pushing
     // reset the `tokensByFile` cache
     var relFilename = path.relative(rootDir, filename);
-    tokensByFile[filename] = loader.tokensByFile[filename] = null;
 
-    d('_flush 1 @relFilename', relFilename)
-    loader.fetch(relFilename, '/').then(function (tokens) {
-      var deps = loader.deps.dependenciesOf(filename);
-      d('fetch cb 0 @deps', deps, `(${relFilename})`)
-      var output = deps.map(function (f) {
-        return 'require("' + f + '")';
-      });
-      output.push('module.exports = ' + JSON.stringify(tokens));
-
-      d('fetch cb 1 @output', output)
-      var isValid = true;
-      var isUndefined = /\bundefined\b/;
-      Object.keys(tokens).forEach(function (k) {
-        if (isUndefined.test(tokens[k])) {
-          isValid = false;
-        }
-      });
-      d('fetch cb 2 @tokens', tokens)
-
-      if (!isValid) {
-        var err = 'Composition in ' + filename + ' contains an undefined reference';
-        console.error(err);
-        output.push('console.error("' + err + '");');
-      }
-
-      assign(tokensByFile, loader.tokensByFile);
-
-      self.push(output.join('\n'));
-      d('fetch cb 3 @output string', output.join('\n'))
-      return callback();
-    }).catch(function (err) {
-      self.push('console.error("' + err + '");');
-      self.emit('error', err);
-      return callback();
-    });
+    postcss(modules({
+      generateScopedName: generateLongName,
+      getJSON: (cssFilename, css) => {
+        d('======getJSON========', cssFilename)
+        self.push('module.exports = ' + JSON.stringify(css))
+      },
+    }))
+      .process(this._data, {from: '/' + relFilename})
+      .then((result) => {
+        d('=========result=======');
+        d(result.css);
+        bundledCss += result.css
+        callback() // TODO: Promise.all
+      })
+      .catch(err => {
+        d('=========error=======');
+        console.error(err)
+      })
   };
 
   browserify.transform(Cmify, transformOpts);
 
-  // ----
-
   function addHooks () {
+    d('======addHooks')
     browserify.pipeline.get('pack').push(through(function write (row, enc, next) {
       next(null, row);
     }, function end (cb) {
@@ -224,18 +137,17 @@ module.exports = function (browserify, options) {
 
       // Combine the collected sources for a single bundle into a single CSS file
       var self = this;
-      var loader = loadersByFile[cssOutFilename];
-      var css = loader.finalSource;
 
       // end the output stream
-      compiledCssStream.push(css);
+      compiledCssStream.push(bundledCss);
       compiledCssStream.push(null);
 
       var writes = [];
 
       // write the css file
       if (cssOutFilename) {
-        writes.push(writeFile(cssOutFilename, css));
+        d('push to writes!!!!!')
+        writes.push(writeFile(cssOutFilename, bundledCss));
       }
 
       // write the classname manifest
@@ -248,7 +160,7 @@ module.exports = function (browserify, options) {
     }));
   }
 
-  browserify.on('reset', addHooks);
+  browserify.on('reset', addHooks); // TODO: why (to trigger for each entrypoints?)
   addHooks();
 
   return browserify;
@@ -265,3 +177,11 @@ function writeFile (filename, content) {
 
 module.exports.generateShortName = generateShortName;
 module.exports.generateLongName = generateLongName;
+
+// TODO: remove for dev
+process.on('unhandledRejection', (err, p) => {
+  console.error('---------unhandledRejection--------', err, p);
+})
+process.on('uncaughtException', (a,b,c) => {
+  console.error('---------uncaughtException---------', a,b,c);
+})
