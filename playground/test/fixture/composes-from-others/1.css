@@ -1,0 +1,4 @@
+.aaa {
+  composes: bbb from './shared.css';
+  font-size: 10em;
+}

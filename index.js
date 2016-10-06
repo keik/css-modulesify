@@ -60,7 +60,6 @@ function getDefaultPlugins (options) {
     , localByDefault
     , extractImports
     , scope
-    , parser
   ];
 }
 
